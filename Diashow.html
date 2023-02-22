@@ -1,0 +1,46 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="10">
+    <title>Diashow</title>
+    <script>
+        function assignImageUrl() {
+            const search = location.search.substr(1)
+            const container = document.createElement("div")
+            container.id = "container"
+            const img = document.createElement("img")
+            const size = "/" + (window.innerWidth*0.99).toFixed(0) + "x" + (window.innerHeight*0.99).toFixed(0)
+            img.src = "https://source.unsplash.com/random" + size + (search ? "?" + search : "")
+
+            //preload
+            const preloadLink = document.createElement("link")
+            preloadLink.rel = "preload"
+            preloadLink.as = "image"
+            preloadLink.href = img.src
+            document.head.appendChild(preloadLink)
+
+            img.alt = "Bild" + (search ? " von " + search + Math.random(5).toFixed(2) : "")
+            container.appendChild(img)
+            document.body.appendChild(container)
+        }
+    </script>
+    <style>
+        body {
+            color-scheme: dark;
+            background: #1F1F1F;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+        }
+        #container img {
+            object-fit: contain;
+            opacity: .5;
+        }
+    </style>
+</head>
+<body onload="assignImageUrl()">
+    
+</body>
+</html>
