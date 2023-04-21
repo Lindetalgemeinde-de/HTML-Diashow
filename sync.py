@@ -1,60 +1,216 @@
 from office365.runtime.auth.authentication_context import AuthenticationContext
 from office365.sharepoint.client_context import ClientContext
-from office365.sharepoint.files.file import File 
+from office365.sharepoint.files.file import File
+import datetime
+import base64
+import sys
+import os
+import shutil
+import ftplib
 
-####inputs########
-# This will be the URL that points to your sharepoint site. 
-# Make sure you change only the parts of the link that start with "Your"
-url_shrpt = 'https://YourOrganisation.sharepoint.com/sites/YourSharepointSiteName'
-username_shrpt = 'YourUsername'
-password_shrpt = 'YourPassword'
-folder_url_shrpt = '/sites/YourSharepointSiteName/Shared%20Documents/YourSharepointFolderName/'
+"""
+Konfiguration
+"""
+SharePointServer   = '' # YourServer.sharepoint.com
+SharePointGroup = ''
+SharePointUsername = ''
+SharePointPassword = '' # b64
+SharePointDownloadFolder = ''
 
-#######################
+FTPHost = ''
+FTPUsername  = ''
+FTPPassword  = '' # b64
+FTPPath = ''
 
+"""
+SharePoint Hauptklasse
+"""
+class SharePointSchaukasten:
+  usr = ''
+  pwr = ''
+  week_num = 52 # Kalenderwoche
+  server = ''
+  server_folder = '/sites/{group}/Freigegebene%20Dokumente/Schaukasten/{week_num}'
+  group = ''
+  group_url = 'https://{server}.sharepoint.com/sites/{group}'
+  sharepoint = '' # Sharepoint Instance
+  download_folder = ''
+  download_path = ''
 
+  """
+  Festlegen der Standartkonfiguration
+  """
+  def __init__(self):
+    global SharePointServer, SharePointGroup, SharePointUsername, SharePointPassword
 
-###Authentication###For authenticating into your sharepoint site###
-ctx_auth = AuthenticationContext(url_shrpt)
-if ctx_auth.acquire_token_for_user(username_shrpt, password_shrpt):
-  ctx = ClientContext(url_shrpt, ctx_auth)
-  web = ctx.web
-  ctx.load(web)
-  ctx.execute_query()
-  print('Authenticated into sharepoint as: ',web.properties['Title'])
+    self.server = SharePointServer
+    self.group = SharePointGroup
+    self.usr = SharePointUsername
+    self.pwr = base64.b64decode(SharePointPassword).decode()
+    self.download_folder = SharePointDownloadFolder
 
-else:
-  print(ctx_auth.get_last_error())
-############################
-  
-  
-  
-  
-####Function for extracting the file names of a folder in sharepoint###
-###If you want to extract the folder names instead of file names, you have to change "sub_folders = folder.files" to "sub_folders = folder.folders" in the below function
-global print_folder_contents
-def print_folder_contents(ctx, folder_url):
+    self.week_num = self.get_calender_week()
+    self.server_folder = self.server_folder.format(group = self.group, week_num = self.week_num)
+    self.group_url = self.group_url.format(server = self.server, group = self.group)
+
+  """
+  Festlegen der aktuellen Kalenderwoche
+  """
+  def get_calender_week(self):
+    week = datetime.date.today().isocalendar().week
+    # Falls Kalenderwoche 53 ist, bleibt die 52 Kalenderwoche als Standart
+    if week in range(1, 52):
+      return week
+
+  """
+  Führt die Authentifizierung an Sharepoint durch
+  """
+  def sharepoint_authentication(self):
+    print("[#] SharePoint Authentication")
+
+    sharepoint_auth = AuthenticationContext(self.group_url)
     try:
-       
-        folder = ctx.web.get_folder_by_server_relative_url(folder_url)
-        fold_names = []
-        sub_folders = folder.files #Replace files with folders for getting list of folders
-        ctx.load(sub_folders)
-        ctx.execute_query()
-     
-        for s_folder in sub_folders:
-            
-            fold_names.append(s_folder.properties["Name"])
+      if sharepoint_auth.acquire_token_for_user(self.usr, self.pwr):
+        self.sharepoint = ClientContext(self.group_url, sharepoint_auth)
+        web = self.sharepoint.web
+        self.sharepoint.load(web)
+        self.sharepoint.execute_query()
+        return True
+    except:
+      print(sys.exc_info())
+      return False
 
-        return fold_names
+  """
+  Läd die Dateien aus dem Kalenderwochen Ordner runter
+  """
+  def download_files(self):
+    print("[#] SharePoint Download")
+    self.create_download_folder()
 
-    except Exception as e:
-        print('Problem printing out library contents: ', e)
-######################################################
+    for f in self.get_files_from_folder():
+      print("'" + f + "' to '" + self.download_path + "'")
+
+      response = File.open_binary(self.sharepoint, self.server_folder + '/' + f)
+      with open(self.download_path + os.sep + f, "wb") as local_file:
+        local_file.write(response.content)
+
+  """
+  Holt die Dateinamen aus dem Verzeichniss aus der Kalenderwoche
+  """
+  def get_files_from_folder(self):
+    files = []
+    try:
+      folder = self.sharepoint.web.get_folder_by_server_relative_url(self.server_folder)
+      sub_folders = folder.files
+      self.sharepoint.load(sub_folders)
+      self.sharepoint.execute_query()
+
+      for f in sub_folders:
+        files.append(f.properties["Name"])
+      
+      return files
+    except:
+      print(sys.exc_info())
+
+  """
+  Erstellt lokalen Download Ordner
+  """
+  def create_download_folder(self):
+    self.download_path = self.download_folder + os.sep + str(self.week_num)
+    if not os.path.exists(self.download_path):
+      os.makedirs(self.download_path)
+
+  """
+  Räumt die alten Dateien weg
+  """
+  def clean_up(self):
+    print("[#] Local Clean up")
+    for d in range (1, 52):
+      if d != self.week_num:
+        dp = self.download_folder + os.sep + str(d).zfill(2)
+        if os.path.exists(dp):
+          print("Remove dir: " + dp)
+          shutil.rmtree(dp)
+
+class FTPSchaukasten:
+  # ToDo: https://www.geeksforgeeks.org/how-to-download-and-upload-files-in-ftp-server-using-python/
+  host = ''
+  usr  = ''
+  pwr  = ''
+  ftp_path = ''
+  ftp_server = '' # FTP Instance
+
+  def __init__(self):
+    global FTPHost, FTPUsername, FTPPassword, FTPPath
+
+    self.host = FTPHost
+    self.usr = FTPUsername
+    self.pwr = base64.b64decode(FTPPassword).decode()
+    self.ftp_path = FTPPath + str(Schaukasten.week_num)
+
+    print("[#] FTP Authentication")
+    self.ftp_server = ftplib.FTP(self.host, self.usr, self.pwr)
+    self.cd_tree(self.ftp_path)
+    self.upload_files()
+    self.clean_up()
+
+    self.ftp_server.quit()
+    print("[#] FTP Logout")
   
-  
-# Call the function by giving your folder URL as input  
-filelist_shrpt=print_folder_contents(ctx,folder_url_shrpt) 
+  """
+  Wechselt das Verzeichnis und erstellt es falls nicht vorhanden
+  """
+  def cd_tree(self, currentDir):
+    if currentDir != '':
+        for d in currentDir.split('/'):
+          try:
+            # print('Entering: {}'.format(d))
+            self.ftp_server.cwd(d)
+          except:
+            # print('Creating: {}'.format(d))
+            self.ftp_server.mkd(d)
+            self.ftp_server.cwd(d)
 
-#Print the list of files present in the folder
-print(filelist_shrpt)
+  """
+  Lädt die runtergeladenen Dateien auf den FTP Server hoch
+  """
+  def upload_files(self):
+    print("[#] FTP Upload")
+    for f in os.listdir(Schaukasten.download_path):
+      ff = open(Schaukasten.download_path + os.sep + f,'rb')
+      print("Upload file: " + Schaukasten.download_path + os.sep + f)
+      self.ftp_server.storbinary('STOR {}'.format(f), ff)
+
+  """
+  Räumt die alten Dateien weg
+  """
+  def clean_up(self):
+    print("[#] FTP Clean up")
+
+    self.ftp_server.cwd('..')
+
+    for d in self.ftp_server.nlst():
+      if d != str(SharePointSchaukasten.get_calender_week(self)):
+        print("Remove dir: " + d)
+        try:
+          self.ftp_server.rmd(d)
+        except:
+          self.ftp_server.cwd(d)
+          for f in self.ftp_server.nlst():
+            self.ftp_server.delete(f)
+          self.ftp_server.cwd('..')
+          self.ftp_server.rmd(d)
+
+"""
+Aufrufen der Klasse zum ausführen unseres Scripts
+"""
+if __name__ == '__main__':
+  try:
+    Schaukasten = SharePointSchaukasten()
+    Schaukasten.sharepoint_authentication()
+    Schaukasten.download_files()
+    Schaukasten.clean_up()
+
+    FTP = FTPSchaukasten()
+  except:
+    pass
