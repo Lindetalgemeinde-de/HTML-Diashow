@@ -7,20 +7,24 @@ import sys
 import os
 import shutil
 import ftplib
+import configparser
+
+config = configparser.ConfigParser()
+config.read('config.ini')
 
 """
 Konfiguration
 """
-SharePointServer   = '' # YourServer.sharepoint.com
-SharePointGroup = ''
-SharePointUsername = ''
-SharePointPassword = '' # b64
-SharePointDownloadFolder = ''
+SharePointServer = config['SharePoint']['SharePointServer']
+SharePointGroup = config['SharePoint']['SharePointGroup']
+SharePointUsername = config['SharePoint']['SharePointUsername']
+SharePointPassword = config['SharePoint']['SharePointPassword'] # b64
+SharePointDownloadFolder = config['SharePoint']['SharePointDownloadFolder']
 
-FTPHost = ''
-FTPUsername  = ''
-FTPPassword  = '' # b64
-FTPPath = ''
+FTPHost = config['FTP']['FTPHost']
+FTPUsername = config['FTP']['FTPUsername']
+FTPPassword = config['FTP']['FTPPassword']
+FTPPath = config['FTP']['FTPPath']
 
 """
 SharePoint Hauptklasse
